@@ -21,6 +21,11 @@ public class QueryBuilder {
         return builder.new Select(columns);
     }
 
+    public static Select selectDistinct(String ...columns) {
+        var builder = new QueryBuilder();
+        return builder.new Select(true, columns);
+    }
+
     public static Delete delete() {
         var builder = new QueryBuilder();
         return builder.new Delete();
@@ -37,12 +42,19 @@ public class QueryBuilder {
     }
 
     public class Select {
-        Select(String ...columns) {
+        Select(boolean distinct, String ...columns) {
             Objects.requireNonNull(columns);
-            buf.add("SELECT " + String.join(", ", columns));
+            buf.add("SELECT" + (distinct ? " DISTINCT " : " ") + String.join(", ", columns));
+        }
+        Select(String ...columns) {
+            this(false, columns);
         }
         public From from(String table) {
             return new From(table);
+        }
+
+        public From from(TerminalClause terminalClause) {
+            return new From(terminalClause);
         }
     }
 
@@ -62,6 +74,14 @@ public class QueryBuilder {
         public Values values(Object ...values) {
             buf.add("VALUES");
             return new Values(values);
+        }
+
+        public Select select(String ...columns) {
+            return new Select(columns);
+        }
+
+        public Select selectDistinct(String ...columns) {
+            return new Select(true, columns);
         }
     }
 
@@ -104,13 +124,22 @@ public class QueryBuilder {
         }
     }
 
-    public class From extends Filterable {
+    public class From extends Joinable {
         From(String table) {
             Objects.requireNonNull(table);
             buf.add("FROM " + table);
         }
-        public Join join(String otherTable) {
-            return new Join(otherTable);
+
+        From(TerminalClause terminalClause) {
+            var query = terminalClause.build();
+            values.addAll(query.values());
+            buf.add("FROM (" + query.query() + ")");
+        }
+
+        public From as(String alias) {
+            Objects.requireNonNull(alias);
+            buf.add("AS " + alias);
+            return this;
         }
     }
 
@@ -119,29 +148,13 @@ public class QueryBuilder {
             Objects.requireNonNull(columns);
             buf.add("ORDER BY " + String.join(", ", columns));
         }
-        public Asc asc() {
-            return new Asc();
-        }
-        public Desc desc() {
-            return new Desc();
-        }
-        public Offset offset(int offset) {
-            return new Offset(offset);
-        }
-    }
-
-    public class Asc extends Limitable {
-        Asc() {
+        public OrderBy asc() {
             buf.add("ASC");
+            return this;
         }
-        public Offset offset(int offset) {
-            return new Offset(offset);
-        }
-    }
-
-    public class Desc extends Limitable {
-        Desc() {
+        public OrderBy desc() {
             buf.add("DESC");
+            return this;
         }
         public Offset offset(int offset) {
             return new Offset(offset);
@@ -162,7 +175,7 @@ public class QueryBuilder {
         }
     }
 
-    public class Where extends Orderable {
+    public class Where extends Groupable {
         Where(Condition condition) {
             var filter = condition.build();
             values.addAll(filter.values());
@@ -170,35 +183,169 @@ public class QueryBuilder {
         }
     }
 
-    public class Join {
+    public class Join extends TerminalClause {
         Join(String table) {
             buf.add("JOIN " + table);
         }
 
-        public On on(String on) {
-            return new On(on);
+        Join(TerminalClause terminalClause) {
+            var query = terminalClause.build();
+            values.addAll(query.values());
+            buf.add("JOIN (" + query.query() + ")");
+        }
+
+        public Join as(String alias) {
+            Objects.requireNonNull(alias);
+            buf.add("AS " + alias);
+            return this;
+        }
+
+        public On on(Condition condition) {
+            return new On(condition);
+        }
+
+        public On using(String... columns) {
+            return new On(columns);
         }
     }
 
-    public class On {
-        On(String column) {
-            buf.add("ON " + column);
+    public class On extends Joinable {
+        On(Condition condition) {
+            var filter = condition.build();
+            values.addAll(filter.values());
+            buf.add("ON").merge(filter.buf());
         }
 
-        public Eq eq(String otherColumn) {
-            return new Eq(otherColumn);
+        On(String... columns) {
+            buf.add("USING (" + String.join(", ", columns) + ")");
         }
     }
 
-    public class Eq extends Filterable  {
-        Eq(String otherColumn) {
-            buf.add("= " + otherColumn);
+    public abstract class Joinable extends Filterable {
+        public Join join(String table) {
+            return new Join(table);
+        }
+
+        public Join join(TerminalClause subquery) {
+            return new Join(subquery);
+        }
+
+        public Join innerJoin(String table) {
+            buf.add("INNER");
+            return new Join(table);
+        }
+
+        public Join innerJoin(TerminalClause subquery) {
+            buf.add("INNER");
+            return new Join(subquery);
+        }
+
+        public Join leftJoin(String table) {
+            buf.add("LEFT");
+            return new Join(table);
+        }
+
+        public Join leftJoin(TerminalClause subquery) {
+            buf.add("LEFT");
+            return new Join(subquery);
+        }
+
+        public Join rightJoin(String table) {
+            buf.add("RIGHT");
+            return new Join(table);
+        }
+
+        public Join rightJoin(TerminalClause subquery) {
+            buf.add("RIGHT");
+            return new Join(subquery);
+        }
+
+        public Join fullJoin(String table) {
+            buf.add("FULL");
+            return new Join(table);
+        }
+
+        public Join fullJoin(TerminalClause subquery) {
+            buf.add("FULL");
+            return new Join(subquery);
+        }
+
+        public Join crossJoin(String table) {
+            buf.add("CROSS");
+            return new Join(table);
+        }
+
+        public Join crossJoin(TerminalClause subquery) {
+            buf.add("CROSS");
+            return new Join(subquery);
+        }
+
+        public Join outerJoin(String table) {
+            buf.add("OUTER");
+            return new Join(table);
+        }
+
+        public Join outerJoin(TerminalClause subquery) {
+            buf.add("OUTER");
+            return new Join(subquery);
+        }
+
+        public Join naturalJoin(String table) {
+            buf.add("NATURAL");
+            return new Join(table);
+        }
+
+        public Join naturalJoin(TerminalClause subquery) {
+            buf.add("NATURAL");
+            return new Join(subquery);
+        }
+    }
+
+    public class GroupBy extends Orderable {
+        GroupBy(String ...columns) {
+            Objects.requireNonNull(columns);
+            buf.add("GROUP BY").add(String.join(", ", columns));
+        }
+
+        public Having having(Condition condition) {
+            return new Having(condition);
+        }
+    }
+
+    public class Having extends Orderable {
+        Having(Condition condition) {
+            var filter = condition.build();
+            values.addAll(filter.values());
+            buf.add("HAVING").merge(filter.buf());
         }
     }
 
     public abstract class TerminalClause {
         public Query build() {
             return new Query(buf.toString(), values);
+        }
+
+        public Union union(TerminalClause other) {
+            return new Union("UNION", other);
+        }
+
+        public Union intersect(TerminalClause other) {
+            return new Union("INTERSECT", other);
+        }
+
+        public Union except(TerminalClause other) {
+            return new Union("EXCEPT", other);
+        }
+    }
+
+    public class Union extends Orderable {
+        Union(String operator, TerminalClause other) {
+            var current = build();
+            var otherQuery = other.build();
+            values = new ArrayList<>(current.values());
+            values.addAll(otherQuery.values());
+            buf = new StringJoiner(" ");
+            buf.add(current.query()).add(operator).add(otherQuery.query());
         }
     }
     public abstract class Limitable extends TerminalClause {
@@ -211,7 +358,14 @@ public class QueryBuilder {
             return new OrderBy(columns);
         }
     }
-    public abstract class Filterable extends Orderable {
+
+    public abstract class Groupable extends Orderable {
+        public GroupBy groupBy(String ...columns) {
+            return new GroupBy(columns);
+        }
+    }
+
+    public abstract class Filterable extends Groupable {
         public Where where(Condition condition) {
             return new Where(condition);
         }

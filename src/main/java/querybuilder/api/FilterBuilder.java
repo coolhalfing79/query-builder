@@ -99,6 +99,40 @@ public class FilterBuilder {
         return builder. new Condition();
     }
 
+    public static Condition colEq(String column1, String column2) {
+        var builder = new FilterBuilder();
+        builder.buf.add(column1).add("=").add(column2);
+        return builder. new Condition();
+    }
+
+    public static Condition isNull(String name) {
+        var builder = new FilterBuilder();
+        builder.buf.add(name).add("IS NULL");
+        return builder. new Condition();
+    }
+
+    public static Condition isNotNull(String name) {
+        var builder = new FilterBuilder();
+        builder.buf.add(name).add("IS NOT NULL");
+        return builder. new Condition();
+    }
+
+    public static Condition exists(TerminalClause subquery) {
+        var query = subquery.build();
+        var builder = new FilterBuilder();
+        builder.values.addAll(query.values());
+        builder.buf.add("EXISTS (" + query.query() + ")");
+        return builder. new Condition();
+    }
+
+    public static Condition notExists(TerminalClause subquery) {
+        var query = subquery.build();
+        var builder = new FilterBuilder();
+        builder.values.addAll(query.values());
+        builder.buf.add("NOT EXISTS (" + query.query() + ")");
+        return builder. new Condition();
+    }
+
     public static Condition and(Condition first, Condition second) {
         var builder = new FilterBuilder();
         var firstFilter = first.build();
@@ -167,6 +201,35 @@ public class FilterBuilder {
             values.add(value);
             buf.add("NOT").add(name).add("= ?");
             return this;
+        }
+
+        public Condition colEq(String column1, String column2) {
+            buf.add(column1).add("=").add(column2);
+            return this;
+        }
+
+        public Condition isNull(String name) {
+            buf.add(name).add("IS NULL");
+            return this;
+        }
+
+        public Condition isNotNull(String name) {
+            buf.add(name).add("IS NOT NULL");
+            return this;
+        }
+
+        public Condition exists(TerminalClause subquery) {
+            var query = subquery.build();
+            values.addAll(query.values());
+            buf.add("EXISTS (" + query.query() + ")");
+            return new CombinedCondition();
+        }
+
+        public Condition notExists(TerminalClause subquery) {
+            var query = subquery.build();
+            values.addAll(query.values());
+            buf.add("NOT EXISTS (" + query.query() + ")");
+            return new CombinedCondition();
         }
 
         public Condition like(String name, Object value) {

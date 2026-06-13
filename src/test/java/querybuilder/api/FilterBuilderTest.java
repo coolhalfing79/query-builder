@@ -438,15 +438,78 @@ class FilterBuilderTest {
     }
 
     // ---------------------------------------------------------------------------
+    // IS NULL / IS NOT NULL / EXISTS / NOT EXISTS
+    // ---------------------------------------------------------------------------
+
+    @Test
+    void isNullCondition() {
+        var f = FilterBuilder.isNull("deleted_at").build();
+        assertEquals("deleted_at IS NULL", f.buf().toString());
+        assertTrue(f.values().isEmpty());
+    }
+
+    @Test
+    void isNotNullCondition() {
+        var f = FilterBuilder.isNotNull("deleted_at").build();
+        assertEquals("deleted_at IS NOT NULL", f.buf().toString());
+        assertTrue(f.values().isEmpty());
+    }
+
+    @Test
+    void existsCondition() {
+        var sub = QueryBuilder.select("*").from("orders").where(FilterBuilder.eq("customer_id", 1));
+        var f = FilterBuilder.exists(sub).build();
+        assertEquals("EXISTS (SELECT * FROM orders WHERE customer_id = ?)", f.buf().toString());
+        assertEquals(List.of(1), f.values());
+    }
+
+    @Test
+    void notExistsCondition() {
+        var sub = QueryBuilder.select("*").from("orders").where(FilterBuilder.eq("customer_id", 1));
+        var f = FilterBuilder.notExists(sub).build();
+        assertEquals("NOT EXISTS (SELECT * FROM orders WHERE customer_id = ?)", f.buf().toString());
+        assertEquals(List.of(1), f.values());
+    }
+
+    @Test
+    void instanceIsNull() {
+        var f = new FilterBuilder().new CombinedCondition().isNull("x").build();
+        assertEquals("x IS NULL", f.buf().toString());
+        assertTrue(f.values().isEmpty());
+    }
+
+    @Test
+    void instanceIsNotNull() {
+        var f = new FilterBuilder().new CombinedCondition().isNotNull("x").build();
+        assertEquals("x IS NOT NULL", f.buf().toString());
+        assertTrue(f.values().isEmpty());
+    }
+
+    @Test
+    void chainedIsNullAndEq() {
+        var f = FilterBuilder.isNull("deleted_at").and().eq("status", "active").build();
+        assertEquals("deleted_at IS NULL AND status = ?", f.buf().toString());
+        assertEquals(List.of("active"), f.values());
+    }
+
+    @Test
+    void chainedExistsAndEq() {
+        var sub = QueryBuilder.select("*").from("orders").where(FilterBuilder.eq("customer_id", 1));
+        var f = FilterBuilder.exists(sub).and().eq("status", "active").build();
+        assertEquals("EXISTS (SELECT * FROM orders WHERE customer_id = ?) AND status = ?", f.buf().toString());
+        assertEquals(List.of(1, "active"), f.values());
+    }
+
+    @Test
+    void andOfIsNullAndNotNull() {
+        var f = FilterBuilder.and(isNull("deleted_at"), isNotNull("created_at")).build();
+        assertEquals("( deleted_at IS NULL ) AND ( created_at IS NOT NULL )", f.buf().toString());
+        assertTrue(f.values().isEmpty());
+    }
+
+    // ---------------------------------------------------------------------------
     // TODO: Missing filter features (not yet supported)
     // ---------------------------------------------------------------------------
 
-    // TODO: IS NULL / IS NOT NULL
-    // Example: isNull("deleted_at") → "deleted_at IS NULL"
-    //          isNotNull("deleted_at") → "deleted_at IS NOT NULL"
-
-    // TODO: EXISTS / NOT EXISTS
-    // Example: exists(select("*").from("orders").where(eq("customer_id", 1))) → "EXISTS (SELECT * FROM orders WHERE customer_id = ?)"
-
-
+    // (all filter features now implemented)
 }

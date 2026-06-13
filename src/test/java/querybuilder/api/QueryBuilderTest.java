@@ -18,6 +18,34 @@ class QueryBuilderTest {
     }
 
     @Test
+    void selectDistinctAllColumns() {
+        var q = selectDistinct("*").from("users").build();
+        assertEquals("SELECT DISTINCT * FROM users", q.query());
+    }
+
+    @Test
+    void selectDistinctSpecificColumns() {
+        var q = selectDistinct("city", "country").from("users").build();
+        assertEquals("SELECT DISTINCT city, country FROM users", q.query());
+    }
+
+    @Test
+    void selectDistinctWithWhere() {
+        var q = selectDistinct("status").from("users")
+                .where(gt("age", 21))
+                .build();
+        assertEquals("SELECT DISTINCT status FROM users WHERE age > ?", q.query());
+        assertEquals(List.of(21), q.values());
+    }
+
+    @Test
+    void selectDistinctWithOrderBy() {
+        var q = selectDistinct("name").from("users")
+                .orderBy("name").build();
+        assertEquals("SELECT DISTINCT name FROM users ORDER BY name", q.query());
+    }
+
+    @Test
     void selectWhereEq() {
         var q = select("*").from("users").where(eq("id", 1)).build();
         assertEquals("SELECT * FROM users WHERE id = ?", q.query());
@@ -202,7 +230,7 @@ class QueryBuilderTest {
     @Test
     void selectJoin() {
         var q = select("*").from("users")
-                .join("orders").on("users.id").eq("orders.user_id")
+                .join("orders").on(colEq("users.id", "orders.user_id"))
                 .build();
         assertEquals("SELECT * FROM users JOIN orders ON users.id = orders.user_id", q.query());
     }
@@ -234,6 +262,52 @@ class QueryBuilderTest {
     }
 
     @Test
+    void insertSelect() {
+        var q = QueryBuilder.insertInto("archive", "id", "name")
+                .select("id", "name").from("users")
+                .where(eq("status", "inactive"))
+                .build();
+        assertEquals("INSERT INTO archive (id, name) SELECT id, name FROM users WHERE status = ?",
+                q.query());
+        assertEquals(List.of("inactive"), q.values());
+    }
+
+    @Test
+    void insertSelectDistinct() {
+        var q = QueryBuilder.insertInto("active_names", "name")
+                .selectDistinct("name").from("users")
+                .where(eq("status", "active"))
+                .build();
+        assertEquals("INSERT INTO active_names (name) SELECT DISTINCT name FROM users WHERE status = ?",
+                q.query());
+        assertEquals(List.of("active"), q.values());
+    }
+
+    @Test
+    void insertSelectWithJoin() {
+        var q = QueryBuilder.insertInto("active_orders", "user_name", "product")
+                .select("users.name", "orders.product")
+                .from("users")
+                .join("orders").on(colEq("users.id", "orders.customer_id"))
+                .where(eq("users.status", "active"))
+                .build();
+        assertEquals(
+                "INSERT INTO active_orders (user_name, product) SELECT users.name, orders.product FROM users JOIN orders ON users.id = orders.customer_id WHERE users.status = ?",
+                q.query());
+        assertEquals(List.of("active"), q.values());
+    }
+
+    @Test
+    void insertSelectOrderBy() {
+        var q = QueryBuilder.insertInto("sorted", "name")
+                .select("name").from("users")
+                .orderBy("name").desc()
+                .build();
+        assertEquals("INSERT INTO sorted (name) SELECT name FROM users ORDER BY name DESC",
+                q.query());
+    }
+
+    @Test
     void updateQuery() {
         var q = QueryBuilder.update("users")
                 .set("first_name", "jon")
@@ -255,14 +329,293 @@ class QueryBuilderTest {
     }
 
     @Test
+    void selectJoinMultipleOnConditions() {
+        var q = select("*").from("orders")
+                .join("order_details")
+                .on(colEq("orders.id", "order_details.order_id").and().colEq("orders.product", "order_details.product"))
+                .build();
+        assertEquals(
+                "SELECT * FROM orders JOIN order_details ON orders.id = order_details.order_id AND orders.product = order_details.product",
+                q.query());
+    }
+
+    @Test
+    void selectJoinWithAdditionalFilter() {
+        var q = select("*").from("users")
+                .join("orders").on(colEq("users.id", "orders.customer_id").and().gt("orders.amount", 100))
+                .build();
+        assertEquals(
+                "SELECT * FROM users JOIN orders ON users.id = orders.customer_id AND orders.amount > ?",
+                q.query());
+        assertEquals(List.of(100), q.values());
+    }
+
+    @Test
+    void selectJoinOnWithOr() {
+        var q = select("*").from("users")
+                .join("orders")
+                .on(colEq("users.id", "orders.customer_id").or().colEq("users.id", "orders.customer_id"))
+                .build();
+        assertEquals(
+                "SELECT * FROM users JOIN orders ON users.id = orders.customer_id OR users.id = orders.customer_id",
+                q.query());
+    }
+
+    @Test
+    void selectJoinOnWithEqAndWhere() {
+        var q = select("*").from("users")
+                .join("orders").on(colEq("users.id", "orders.customer_id"))
+                .where(and(eq("users.status", "active"), gt("orders.amount", 50)))
+                .build();
+        assertEquals(
+                "SELECT * FROM users JOIN orders ON users.id = orders.customer_id WHERE ( users.status = ? ) AND ( orders.amount > ? )",
+                q.query());
+        assertEquals(List.of("active", 50), q.values());
+    }
+
+    @Test
+    void selectJoinOnWithNot() {
+        var q = select("*").from("users")
+                .join("orders").on(not(colEq("users.id", "orders.customer_id")))
+                .build();
+        assertEquals("SELECT * FROM users JOIN orders ON NOT ( users.id = orders.customer_id )",
+                q.query());
+    }
+
+    @Test
+    void deleteWithJoin() {
+        // DELETE does not support JOIN via this API — only DELETE FROM ... WHERE
+        var q = QueryBuilder.delete().from("users")
+                .where(in("id", select("customer_id").from("orders").where(eq("product", "Widget"))))
+                .build();
+        assertEquals("DELETE FROM users WHERE id IN (SELECT customer_id FROM orders WHERE product = ?)",
+                q.query());
+        assertEquals(List.of("Widget"), q.values());
+    }
+
+    @Test
+    void insertWithSubqueryValues() {
+        // INSERT INTO ... SELECT ... is not supported via values() — this is a TODO
+        var q = QueryBuilder.insertInto("archive", "id", "name")
+                .values(1, "archived")
+                .build();
+        assertEquals("INSERT INTO archive (id, name) VALUES (?, ?)", q.query());
+        assertEquals(List.of(1, "archived"), q.values());
+    }
+
+    @Test
     void whereAfterJoin() {
         var q = select("*").from("users")
-                .join("orders").on("users.id").eq("orders.user_id")
+                .join("orders").on(colEq("users.id", "orders.user_id"))
                 .where(eq("users.name", "jon"))
                 .build();
         assertEquals("SELECT * FROM users JOIN orders ON users.id = orders.user_id WHERE users.name = ?",
                 q.query());
         assertEquals(List.of("jon"), q.values());
+    }
+
+    @Test
+    void selectInnerJoin() {
+        var q = select("*").from("users")
+                .innerJoin("orders").on(colEq("users.id", "orders.customer_id"))
+                .build();
+        assertEquals("SELECT * FROM users INNER JOIN orders ON users.id = orders.customer_id",
+                q.query());
+    }
+
+    @Test
+    void selectLeftJoin() {
+        var q = select("*").from("users")
+                .leftJoin("orders").on(colEq("users.id", "orders.customer_id"))
+                .build();
+        assertEquals("SELECT * FROM users LEFT JOIN orders ON users.id = orders.customer_id",
+                q.query());
+    }
+
+    @Test
+    void selectRightJoin() {
+        var q = select("*").from("users")
+                .rightJoin("orders").on(colEq("users.id", "orders.customer_id"))
+                .build();
+        assertEquals("SELECT * FROM users RIGHT JOIN orders ON users.id = orders.customer_id",
+                q.query());
+    }
+
+    @Test
+    void selectFullJoin() {
+        var q = select("*").from("users")
+                .fullJoin("orders").on(colEq("users.id", "orders.customer_id"))
+                .build();
+        assertEquals("SELECT * FROM users FULL JOIN orders ON users.id = orders.customer_id",
+                q.query());
+    }
+
+    @Test
+    void selectCrossJoin() {
+        var q = select("*").from("users")
+                .crossJoin("orders")
+                .build();
+        assertEquals("SELECT * FROM users CROSS JOIN orders",
+                q.query());
+    }
+
+    @Test
+    void selectCrossJoinWithOn() {
+        var q = select("*").from("users")
+                .crossJoin("orders").on(colEq("users.id", "orders.customer_id"))
+                .build();
+        assertEquals("SELECT * FROM users CROSS JOIN orders ON users.id = orders.customer_id",
+                q.query());
+    }
+
+    @Test
+    void selectNaturalJoin() {
+        var q = select("*").from("users")
+                .naturalJoin("orders")
+                .build();
+        assertEquals("SELECT * FROM users NATURAL JOIN orders",
+                q.query());
+    }
+
+    @Test
+    void selectMultipleJoins() {
+        var q = select("*").from("users")
+                .join("orders").on(colEq("users.id", "orders.customer_id"))
+                .join("order_details").on(
+                        and(colEq("orders.id", "order_details.order_id"),
+                                colEq("orders.product", "order_details.product")))
+                .build();
+        assertEquals(
+                "SELECT * FROM users JOIN orders ON users.id = orders.customer_id JOIN order_details ON ( orders.id = order_details.order_id ) AND ( orders.product = order_details.product )",
+                q.query());
+    }
+
+    @Test
+    void selectMixedJoinQualifiers() {
+        var q = select("*").from("users")
+                .leftJoin("orders").on(colEq("users.id", "orders.customer_id"))
+                .innerJoin("order_details").on(
+                        and(colEq("orders.id", "order_details.order_id"),
+                                colEq("orders.product", "order_details.product")))
+                .build();
+        assertEquals(
+                "SELECT * FROM users LEFT JOIN orders ON users.id = orders.customer_id INNER JOIN order_details ON ( orders.id = order_details.order_id ) AND ( orders.product = order_details.product )",
+                q.query());
+    }
+
+    @Test
+    void selectMultipleJoinsWithWhere() {
+        var q = select("*").from("users")
+                .leftJoin("orders").on(colEq("users.id", "orders.customer_id"))
+                .join("order_details").on(
+                        and(colEq("orders.id", "order_details.order_id"),
+                                colEq("orders.product", "order_details.product")))
+                .where(eq("users.status", "active"))
+                .build();
+        assertEquals(
+                "SELECT * FROM users LEFT JOIN orders ON users.id = orders.customer_id JOIN order_details ON ( orders.id = order_details.order_id ) AND ( orders.product = order_details.product ) WHERE users.status = ?",
+                q.query());
+        assertEquals(List.of("active"), q.values());
+    }
+
+    // ---- Subquery in FROM / JOIN ----
+
+    @Test
+    void fromSubquery() {
+        var sub = select("id", "name").from("users").where(gt("age", 21));
+        var q = select("*").from(sub).build();
+        assertEquals(
+                "SELECT * FROM (SELECT id, name FROM users WHERE age > ?)",
+                q.query());
+        assertEquals(List.of(21), q.values());
+    }
+
+    @Test
+    void fromSubqueryWithAs() {
+        var sub = select("id", "name").from("users");
+        var q = select("*").from(sub).as("u").build();
+        assertEquals(
+                "SELECT * FROM (SELECT id, name FROM users) AS u",
+                q.query());
+    }
+
+    @Test
+    void fromSubqueryWithWhere() {
+        var sub = select("id", "name").from("users").where(gt("age", 18));
+        var q = select("*").from(sub).as("adults")
+                .where(like("name", "A%"))
+                .build();
+        assertEquals(
+                "SELECT * FROM (SELECT id, name FROM users WHERE age > ?) AS adults WHERE name LIKE ?",
+                q.query());
+        assertEquals(List.of(18, "A%"), q.values());
+    }
+
+    @Test
+    void fromSubqueryWithJoin() {
+        var active = select("id", "name").from("users").where(eq("status", "active"));
+        var q = select("*").from(active).as("u")
+                .join("orders").on(colEq("u.id", "orders.customer_id"))
+                .build();
+        assertEquals(
+                "SELECT * FROM (SELECT id, name FROM users WHERE status = ?) AS u JOIN orders ON u.id = orders.customer_id",
+                q.query());
+        assertEquals(List.of("active"), q.values());
+    }
+
+    @Test
+    void joinSubquery() {
+        var topProducts = select("customer_id", "product", "amount")
+                .from("orders").where(gt("amount", 100));
+        var q = select("*").from("users")
+                .join(topProducts).as("big")
+                .on(colEq("users.id", "big.customer_id"))
+                .build();
+        assertEquals(
+                "SELECT * FROM users JOIN (SELECT customer_id, product, amount FROM orders WHERE amount > ?) AS big ON users.id = big.customer_id",
+                q.query());
+        assertEquals(List.of(100), q.values());
+    }
+
+    @Test
+    void leftJoinSubquery() {
+        var topCustomers = select("customer_id", "COUNT(*) AS cnt")
+                .from("orders").where(gt("amount", 10));
+        var q = select("*").from("users")
+                .leftJoin(topCustomers).as("os")
+                .on(colEq("users.id", "os.customer_id"))
+                .build();
+        assertEquals(
+                "SELECT * FROM users LEFT JOIN (SELECT customer_id, COUNT(*) AS cnt FROM orders WHERE amount > ?) AS os ON users.id = os.customer_id",
+                q.query());
+        assertEquals(List.of(10), q.values());
+    }
+
+    @Test
+    void joinSubqueryWithWhere() {
+        var expensive = select("customer_id", "product")
+                .from("orders").where(gt("amount", 50));
+        var q = select("*").from("users")
+                .join(expensive).as("e")
+                .on(colEq("users.id", "e.customer_id"))
+                .where(eq("users.status", "active"))
+                .build();
+        assertEquals(
+                "SELECT * FROM users JOIN (SELECT customer_id, product FROM orders WHERE amount > ?) AS e ON users.id = e.customer_id WHERE users.status = ?",
+                q.query());
+        assertEquals(List.of(50, "active"), q.values());
+    }
+
+    @Test
+    void insertSelectFromSubquery() {
+        var source = select("name", "age").from("users").where(eq("status", "active"));
+        var q = QueryBuilder.insertInto("active_users", "name", "age")
+                .select("name", "age").from(source)
+                .build();
+        assertEquals(
+                "INSERT INTO active_users (name, age) SELECT name, age FROM (SELECT name, age FROM users WHERE status = ?)",
+                q.query());
+        assertEquals(List.of("active"), q.values());
     }
 
     // ---------------------------------------------------------------------------
@@ -454,6 +807,70 @@ class QueryBuilderTest {
         assertEquals(List.of(0, 1), q.values());
     }
 
+    // ---- IS NULL / IS NOT NULL / EXISTS / NOT EXISTS ----
+
+    @Test
+    void selectWhereIsNull() {
+        var q = select("*").from("users").where(isNull("email")).build();
+        assertEquals("SELECT * FROM users WHERE email IS NULL", q.query());
+        assertTrue(q.values().isEmpty());
+    }
+
+    @Test
+    void selectWhereIsNotNull() {
+        var q = select("*").from("users").where(isNotNull("email")).build();
+        assertEquals("SELECT * FROM users WHERE email IS NOT NULL", q.query());
+        assertTrue(q.values().isEmpty());
+    }
+
+    @Test
+    void selectWhereExists() {
+        var sub = select("*").from("orders").where(colEq("orders.customer_id", "users.id"));
+        var q = select("*").from("users").where(exists(sub)).build();
+        assertEquals(
+                "SELECT * FROM users WHERE EXISTS (SELECT * FROM orders WHERE orders.customer_id = users.id)",
+                q.query());
+        assertTrue(q.values().isEmpty());
+    }
+
+    @Test
+    void selectWhereNotExists() {
+        var sub = select("*").from("orders").where(colEq("orders.customer_id", "users.id"));
+        var q = select("*").from("users").where(notExists(sub)).build();
+        assertEquals(
+                "SELECT * FROM users WHERE NOT EXISTS (SELECT * FROM orders WHERE orders.customer_id = users.id)",
+                q.query());
+        assertTrue(q.values().isEmpty());
+    }
+
+    @Test
+    void selectWhereExistsWithParams() {
+        var sub = select("*").from("orders")
+                .where(and(colEq("orders.customer_id", "users.id"), gt("orders.amount", 100)));
+        var q = select("*").from("users").where(exists(sub)).build();
+        assertEquals(
+                "SELECT * FROM users WHERE EXISTS (SELECT * FROM orders WHERE ( orders.customer_id = users.id ) AND ( orders.amount > ? ))",
+                q.query());
+        assertEquals(List.of(100), q.values());
+    }
+
+    @Test
+    void selectWhereAndIsNull() {
+        var q = select("*").from("users")
+                .where(and(isNull("email"), eq("status", "inactive")))
+                .build();
+        assertEquals("SELECT * FROM users WHERE ( email IS NULL ) AND ( status = ? )", q.query());
+        assertEquals(List.of("inactive"), q.values());
+    }
+
+    @Test
+    void selectWhereNotIsNull() {
+        var q = select("*").from("users")
+                .where(not(isNull("email")))
+                .build();
+        assertEquals("SELECT * FROM users WHERE NOT ( email IS NULL )", q.query());
+    }
+
     // ---------------------------------------------------------------------------
     // Edge cases
     // ---------------------------------------------------------------------------
@@ -486,55 +903,250 @@ class QueryBuilderTest {
         assertEquals(List.of(-5, 10), q.values());
     }
 
-    // ---------------------------------------------------------------------------
-    // TODO: Missing features (not yet supported — tracked as disabled tests)
-    // ---------------------------------------------------------------------------
-
-    // TODO: GROUP BY clause
-    // Example: select("*").from("users").groupBy("department") → "SELECT * FROM users GROUP BY department"
-    // Missing: GroupBy class, groupBy() method on Filterable / Orderable
-
-    // TODO: HAVING clause
-    // Example: select("department", "COUNT(*)").from("employees").groupBy("department").having(gt("COUNT(*)", 5))
-    // Missing: Having class, having() method
-
-    // TODO: SELECT DISTINCT
-    // Example: selectDistinct("city").from("users") → "SELECT DISTINCT city FROM users"
-    // Missing: selectDistinct() entry point, or distinct modifier
-
-    // TODO: Multiple JOINs
-    // Example: from("a").join("b").on("a.id").eq("b.a_id").join("c").on("b.id").eq("c.b_id")
-    // Missing: join() method on Eq/Filterable (currently only on From)
-
-    // TODO: JOIN type qualifiers (INNER, LEFT, RIGHT, FULL, CROSS)
-    // Example: leftJoin("b").on("a.id").eq("b.a_id") → "LEFT JOIN b ON a.id = b.a_id"
-
-    // TODO: EXISTS / NOT EXISTS conditions
-    // Example: exists(select("*").from("orders").where(eq("customer_id", 1))) → "EXISTS (SELECT * FROM orders WHERE customer_id = ?)"
-    // Missing: FilterBuilder.exists(), FilterBuilder.not_exists()
-
-    // TODO: IS NULL / IS NOT NULL conditions
-    // Example: isNull("deleted_at") → "deleted_at IS NULL"
-    // Missing: FilterBuilder.isNull(), FilterBuilder.isNotNull()
-
-    // TODO: Subquery IN FROM clause
-    // Example: from(select("*").from("sub")).alias("t") — needs From to accept TerminalClause, not just String
-
-    // TODO: UNION / INTERSECT / EXCEPT
-    // Example: select("*").from("a").union(select("*").from("b"))
-    // Missing: union(), intersect(), except() builders
-
-
+    // ---- GROUP BY ----
 
     @Test
-    @org.junit.jupiter.api.Disabled("GROUP BY not yet implemented")
     void selectGroupBy() {
-        // select("*").from("users").groupBy("department").build();
+        var q = select("status", "COUNT(*)").from("users")
+                .groupBy("status")
+                .build();
+        assertEquals("SELECT status, COUNT(*) FROM users GROUP BY status", q.query());
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("HAVING not yet implemented")
+    void selectGroupByMultipleColumns() {
+        var q = select("status", "age", "COUNT(*)").from("users")
+                .groupBy("status", "age")
+                .build();
+        assertEquals("SELECT status, age, COUNT(*) FROM users GROUP BY status, age", q.query());
+    }
+
+    @Test
+    void selectWhereGroupBy() {
+        var q = select("status", "COUNT(*)").from("users")
+                .where(gt("age", 20))
+                .groupBy("status")
+                .build();
+        assertEquals("SELECT status, COUNT(*) FROM users WHERE age > ? GROUP BY status",
+                q.query());
+        assertEquals(List.of(20), q.values());
+    }
+
+    @Test
+    void selectGroupByOrderBy() {
+        var q = select("status", "COUNT(*)").from("users")
+                .groupBy("status")
+                .orderBy("status")
+                .build();
+        assertEquals("SELECT status, COUNT(*) FROM users GROUP BY status ORDER BY status",
+                q.query());
+    }
+
+    @Test
+    void selectGroupByLimit() {
+        var q = select("status", "COUNT(*)").from("users")
+                .groupBy("status")
+                .limit(5)
+                .build();
+        assertEquals("SELECT status, COUNT(*) FROM users GROUP BY status FETCH NEXT ? ROWS ONLY",
+                q.query());
+        assertEquals(List.of(5), q.values());
+    }
+
+    @Test
+    void selectWhereGroupByOrderByLimit() {
+        var q = select("status", "COUNT(*)").from("users")
+                .where(gt("age", 18))
+                .groupBy("status")
+                .orderBy("status").desc()
+                .limit(10)
+                .build();
+        assertEquals(
+                "SELECT status, COUNT(*) FROM users WHERE age > ? GROUP BY status ORDER BY status DESC FETCH NEXT ? ROWS ONLY",
+                q.query());
+        assertEquals(List.of(18, 10), q.values());
+    }
+
+    @Test
+    void selectGroupByWithJoin() {
+        var q = select("users.status", "COUNT(orders.id)")
+                .from("users")
+                .leftJoin("orders").on(colEq("users.id", "orders.customer_id"))
+                .groupBy("users.status")
+                .build();
+        assertEquals(
+                "SELECT users.status, COUNT(orders.id) FROM users LEFT JOIN orders ON users.id = orders.customer_id GROUP BY users.status",
+                q.query());
+    }
+
+    @Test
+    void insertSelectWithGroupBy() {
+        var q = QueryBuilder.insertInto("status_counts", "status", "cnt")
+                .select("status", "COUNT(*)").from("users")
+                .groupBy("status")
+                .build();
+        assertEquals(
+                "INSERT INTO status_counts (status, cnt) SELECT status, COUNT(*) FROM users GROUP BY status",
+                q.query());
+    }
+
+    // ---- HAVING ----
+
+    @Test
     void selectHaving() {
-        // select("department", "COUNT(*)").from("employees").groupBy("department").having(gt("COUNT(*)", 5)).build();
+        var q = select("department", "COUNT(*)").from("employees")
+                .groupBy("department")
+                .having(gt("COUNT(*)", 5))
+                .build();
+        assertEquals("SELECT department, COUNT(*) FROM employees GROUP BY department HAVING COUNT(*) > ?",
+                q.query());
+        assertEquals(List.of(5), q.values());
+    }
+
+    @Test
+    void selectWhereGroupByHaving() {
+        var q = select("department", "COUNT(*)").from("employees")
+                .where(gt("salary", 50000))
+                .groupBy("department")
+                .having(gt("COUNT(*)", 3))
+                .build();
+        assertEquals("SELECT department, COUNT(*) FROM employees WHERE salary > ? GROUP BY department HAVING COUNT(*) > ?",
+                q.query());
+        assertEquals(List.of(50000, 3), q.values());
+    }
+
+    @Test
+    void selectGroupByHavingOrderBy() {
+        var q = select("department", "COUNT(*)").from("employees")
+                .groupBy("department")
+                .having(gt("COUNT(*)", 5))
+                .orderBy("department").desc()
+                .build();
+        assertEquals("SELECT department, COUNT(*) FROM employees GROUP BY department HAVING COUNT(*) > ? ORDER BY department DESC",
+                q.query());
+        assertEquals(List.of(5), q.values());
+    }
+
+    @Test
+    void selectGroupByHavingLimit() {
+        var q = select("department", "COUNT(*)").from("employees")
+                .groupBy("department")
+                .having(gt("COUNT(*)", 5))
+                .limit(10)
+                .build();
+        assertEquals("SELECT department, COUNT(*) FROM employees GROUP BY department HAVING COUNT(*) > ? FETCH NEXT ? ROWS ONLY",
+                q.query());
+        assertEquals(List.of(5, 10), q.values());
+    }
+
+    // ---- Self-join with table alias ----
+
+    @Test
+    void selectFromWithAlias() {
+        var q = select("e.name", "m.name").from("employees").as("e")
+                .join("employees").as("m").on(colEq("e.manager_id", "m.id"))
+                .build();
+        assertEquals("SELECT e.name, m.name FROM employees AS e JOIN employees AS m ON e.manager_id = m.id",
+                q.query());
+    }
+
+    @Test
+    void selectJoinWithAlias() {
+        var q = select("*").from("orders")
+                .leftJoin("customers").as("c").on(colEq("orders.customer_id", "c.id"))
+                .build();
+        assertEquals("SELECT * FROM orders LEFT JOIN customers AS c ON orders.customer_id = c.id",
+                q.query());
+    }
+
+    @Test
+    void selectFromSubqueryWithAlias() {
+        var q = select("sq.*").from(select("*").from("users")).as("sq")
+                .build();
+        assertEquals("SELECT sq.* FROM (SELECT * FROM users) AS sq", q.query());
+    }
+
+    @Test
+    void selectJoinSubqueryWithAlias() {
+        var q = select("*").from("orders")
+                .join(select("id").from("customers").where(gt("id", 0))).as("active")
+                .on(colEq("orders.customer_id", "active.id"))
+                .build();
+        assertEquals("SELECT * FROM orders JOIN (SELECT id FROM customers WHERE id > ?) AS active ON orders.customer_id = active.id",
+                q.query());
+        assertEquals(List.of(0), q.values());
+    }
+
+    // ---- USING ----
+
+    @Test
+    void selectJoinUsing() {
+        var q = select("*").from("a")
+                .join("b").using("id")
+                .build();
+        assertEquals("SELECT * FROM a JOIN b USING (id)", q.query());
+    }
+
+    @Test
+    void selectJoinUsingMultipleColumns() {
+        var q = select("*").from("a")
+                .leftJoin("b").using("x", "y")
+                .build();
+        assertEquals("SELECT * FROM a LEFT JOIN b USING (x, y)", q.query());
+    }
+
+    // ---- UNION / INTERSECT / EXCEPT ----
+
+    @Test
+    void selectUnion() {
+        var q = select("*").from("a")
+                .union(select("*").from("b"))
+                .build();
+        assertEquals("SELECT * FROM a UNION SELECT * FROM b", q.query());
+    }
+
+    @Test
+    void selectUnionWithValues() {
+        var q = select("name").from("users")
+                .where(eq("active", true))
+                .union(select("name").from("archived").where(eq("active", true)))
+                .build();
+        assertEquals("SELECT name FROM users WHERE active = ? UNION SELECT name FROM archived WHERE active = ?",
+                q.query());
+        assertEquals(List.of(true, true), q.values());
+    }
+
+    @Test
+    void selectIntersect() {
+        var q = select("*").from("a")
+                .intersect(select("*").from("b"))
+                .build();
+        assertEquals("SELECT * FROM a INTERSECT SELECT * FROM b", q.query());
+    }
+
+    @Test
+    void selectExcept() {
+        var q = select("*").from("a")
+                .except(select("*").from("b"))
+                .build();
+        assertEquals("SELECT * FROM a EXCEPT SELECT * FROM b", q.query());
+    }
+
+    @Test
+    void selectUnionOrderBy() {
+        var q = select("*").from("a")
+                .union(select("*").from("b"))
+                .orderBy("id")
+                .build();
+        assertEquals("SELECT * FROM a UNION SELECT * FROM b ORDER BY id", q.query());
+    }
+
+    @Test
+    void selectChainedUnion() {
+        var q = select("*").from("a")
+                .union(select("*").from("b"))
+                .union(select("*").from("c"))
+                .build();
+        assertEquals("SELECT * FROM a UNION SELECT * FROM b UNION SELECT * FROM c", q.query());
     }
 }
