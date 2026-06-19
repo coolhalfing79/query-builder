@@ -7,7 +7,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-import querybuilder.api.FilterBuilder.Condition;
+import querybuilder.api.FilterBuilder.*;
 
 /**
  * Fluent SQL query builder.
@@ -29,15 +29,86 @@ import querybuilder.api.FilterBuilder.Condition;
  * prepared-statement friendly) and omits the trailing semicolon.
  */
 public class QueryBuilder {
+    record Filter(String sql, List<Object> params) {
+    }
+
+    class SQLFilterBuilderStategy implements FilterBuilder.BuilderStrategy<Filter> {
+
+        @Override
+        public Filter build(IExpression expr) {
+            return switch (expr) {
+                case ColEq(var left, var right) -> new Filter(left + " = " + right, List.of());
+                case Equals(var key, var val) -> new Filter(key + " = ?", List.of(val));
+                case Like(var key, var val) -> new Filter(key + " LIKE ?", List.of(val));
+                case IsNotNull(var key) -> new Filter(key + " IS NOT NULL", List.of());
+                case IsNull(var key) -> new Filter(key + " IS NULL", List.of());
+                case GreaterThan(var key, var val) -> new Filter(key + " > ?", List.of(val));
+                case LessThan(var key, var val) -> new Filter(key + " < ?", List.of(val));
+                case And(var exprs) -> buildCompound(") AND (", exprs);
+                case Or(var exprs) -> buildCompound(") OR (", exprs);
+                case In(var key, var vals) -> buildIn(key, vals);
+                case InSubquery(var key, var subquery) -> buildInSubquery(key, subquery);
+                case Between(var key, var first, var second) -> buildBetween(key, first, second);
+                case Not(var inner) -> buildNot(inner);
+                case Exists(var subquery) -> buildExists(subquery);
+                case NotExists(var subquery) -> buildNotExists(subquery);
+            };
+        }
+
+        private Filter buildExists(TerminalClause subquery) {
+            var q = subquery.build();
+            return new Filter("EXISTS (" + q.query() + ")", q.values());
+        }
+
+        private Filter buildNotExists(TerminalClause subquery) {
+            var q = subquery.build();
+            return new Filter("NOT EXISTS (" + q.query() + ")", q.values());
+        }
+
+        private Filter buildNot(IExpression expr) {
+            var f = build(expr);
+            return new Filter("NOT (" + f.sql() + ")", f.params());
+        }
+
+        private Filter buildIn(String key, List<Object> vals) {
+            var placeholders = String.join(", ", Collections.nCopies(vals.size(), "?"));
+            return new Filter(key + " IN (" + placeholders + ")", vals);
+        }
+
+        private Filter buildBetween(String key, Object first, Object second) {
+            return new Filter(key + " BETWEEN ? AND ?", List.of(first, second));
+        }
+
+        private Filter buildInSubquery(String key, TerminalClause subquery) {
+            var q = subquery.build();
+            return new Filter(key + " IN (" + q.query() + ")", q.values());
+        }
+
+        private Filter buildCompound(String op, List<IExpression> expressions) {
+            var params = new ArrayList<>();
+            var joiner = new StringJoiner(op, "(", ")");
+            for (var expr : expressions) {
+                var f = build(expr);
+                params.addAll(f.params());
+                joiner.add(f.sql());
+            }
+            return new Filter(joiner.toString(), params);
+        }
+    }
+
     StringJoiner buf = new StringJoiner(" ");
     List<Object> values = new ArrayList<>();
-    private QueryBuilder() { }
+    SQLFilterBuilderStategy strat = new SQLFilterBuilderStategy();
+
+    private QueryBuilder() {
+    }
 
     /**
      * A built query: a SQL string with {@code ?} placeholders and a list of
      * parameter values in binding order.
      */
-    public record Query(String query, List<Object> values) {}
+    public record Query(String query, List<Object> values) {
+    }
 
     /**
      * Starts a {@code SELECT} statement.
@@ -96,9 +167,11 @@ public class QueryBuilder {
             Objects.requireNonNull(columns);
             buf.add("SELECT" + (distinct ? " DISTINCT " : " ") + String.join(", ", columns));
         }
+
         Select(String ...columns) {
             this(false, columns);
         }
+
         /**
          * Sets the FROM clause to a table.
          * @param table the table name
@@ -161,6 +234,7 @@ public class QueryBuilder {
             Objects.requireNonNull(columns);
             buf.add("INSERT INTO " + table + " (" + String.join(", ", columns) + ")");
         }
+
         /**
          * Adds a {@code VALUES} clause with the given row of values.
          * @param values the values to insert
@@ -195,6 +269,7 @@ public class QueryBuilder {
             Objects.requireNonNull(table);
             buf.add("UPDATE").add(table);
         }
+
         /**
          * Adds a {@code SET} assignment.
          * @param col the column name
@@ -218,6 +293,7 @@ public class QueryBuilder {
             values.add(val);
             buf.add("SET").add(col).add("= ?");
         }
+
         /**
          * Adds another column assignment to the SET clause.
          * @param col the column name
@@ -300,6 +376,7 @@ public class QueryBuilder {
             Objects.requireNonNull(columns);
             buf.add("ORDER BY " + String.join(", ", columns));
         }
+
         /**
          * Appends {@code ASC} (ascending order).
          */
@@ -307,6 +384,7 @@ public class QueryBuilder {
             buf.add("ASC");
             return this;
         }
+
         /**
          * Appends {@code DESC} (descending order).
          */
@@ -314,6 +392,7 @@ public class QueryBuilder {
             buf.add("DESC");
             return this;
         }
+
         /**
          * Adds an {@code OFFSET ? ROWS} clause.
          * @param offset the number of rows to skip
@@ -349,21 +428,21 @@ public class QueryBuilder {
 
     /**
      * Builder step for the {@code WHERE} clause.
-     * <p>Accepts a {@link Condition} and consumes it (single-use).
+     * <p>Accepts a {@link IExpression} and consumes it (single-use).
      * After WHERE, optional {@code GROUP BY} / {@code ORDER BY} / {@code LIMIT}
      * clauses may follow.
      */
     public class Where extends Groupable {
-        Where(Condition condition) {
-            var filter = condition.build();
-            values.addAll(filter.values());
-            buf.add("WHERE").merge(filter.buf());
+        Where(IExpression condition) {
+            var filter = condition.build(strat);
+            values.addAll(filter.params());
+            buf.add("WHERE").add(filter.sql());
         }
     }
 
     /**
      * Builder step for the {@code JOIN} clause.
-     * <p>Supply the join condition via {@link #on(Condition)} or
+     * <p>Supply the join condition via {@link #on(IExpression)} or
      * {@link #using(String...)}. A plain {@code JOIN} (without qualifier)
      * produces {@code JOIN}. Use the methods on {@link Joinable} (e.g.
      * {@link Joinable#leftJoin(String) leftJoin()}) to add a qualifier.
@@ -396,7 +475,7 @@ public class QueryBuilder {
          * Adds an {@code ON} clause with the given condition.
          * @param condition the join condition (consumed, single-use)
          */
-        public On on(Condition condition) {
+        public On on(IExpression condition) {
             return new On(condition);
         }
 
@@ -404,7 +483,7 @@ public class QueryBuilder {
          * Adds a {@code USING} clause with the given column names.
          * @param columns the shared column names
          */
-        public On using(String... columns) {
+        public On using(String ...columns) {
             return new On(columns);
         }
     }
@@ -415,13 +494,13 @@ public class QueryBuilder {
      * clauses may follow.
      */
     public class On extends Joinable {
-        On(Condition condition) {
-            var filter = condition.build();
-            values.addAll(filter.values());
-            buf.add("ON").merge(filter.buf());
+        On(IExpression condition) {
+            var filter = condition.build(strat);
+            values.addAll(filter.params());
+            buf.add("ON").add(filter.sql());
         }
 
-        On(String... columns) {
+        On(String ...columns) {
             buf.add("USING (" + String.join(", ", columns) + ")");
         }
     }
@@ -582,7 +661,7 @@ public class QueryBuilder {
 
     /**
      * Builder step for the {@code GROUP BY} clause.
-     * <p>Follow with {@link #having(Condition)} or proceed to
+     * <p>Follow with {@link #having(IExpression)} or proceed to
      * {@code ORDER BY} / {@code LIMIT}.
      */
     public class GroupBy extends Orderable {
@@ -595,7 +674,7 @@ public class QueryBuilder {
          * Adds a {@code HAVING} clause (filter after aggregation).
          * @param condition the having condition (consumed, single-use)
          */
-        public Having having(Condition condition) {
+        public Having having(IExpression condition) {
             return new Having(condition);
         }
     }
@@ -605,10 +684,10 @@ public class QueryBuilder {
      * <p>After HAVING, proceed to {@code ORDER BY} / {@code LIMIT}.
      */
     public class Having extends Orderable {
-        Having(Condition condition) {
-            var filter = condition.build();
-            values.addAll(filter.values());
-            buf.add("HAVING").merge(filter.buf());
+        Having(IExpression condition) {
+            var filter = condition.build(strat);
+            values.addAll(filter.params());
+            buf.add("HAVING").add(filter.sql());
         }
     }
 
@@ -719,14 +798,14 @@ public class QueryBuilder {
     }
 
     /**
-     * Abstract step that exposes {@link #where(Condition)}.
+     * Abstract step that exposes {@link #where(IExpression)}.
      */
     public abstract class Filterable extends Groupable {
         /**
          * Adds a {@code WHERE} clause.
          * @param condition the filter condition (consumed, single-use)
          */
-        public Where where(Condition condition) {
+        public Where where(IExpression condition) {
             return new Where(condition);
         }
     }

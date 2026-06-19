@@ -177,7 +177,7 @@ class QueryBuilderIntegrationTest {
 
     @Test
     void selectWhereNotEq() throws Exception {
-        var q = select("*").from("users").where(not_eq("name", "Alice")).build();
+        var q = select("*").from("users").where(not(eq("name", "Alice"))).build();
         var rs = execute(q);
         int count = 0;
         while (rs.next()) count++;
@@ -240,6 +240,17 @@ class QueryBuilderIntegrationTest {
     }
 
     @Test
+    void selectWhereNotBetween() throws Exception {
+        var q = select("*").from("users")
+                .where(not(between("age", 25, 30)))
+                .build();
+        var rs = execute(q);
+        int count = 0;
+        while (rs.next()) count++;
+        assertEquals(2, count);
+    }
+
+    @Test
     void selectWhereLike() throws Exception {
         var q = select("*").from("users")
                 .where(like("name", "A%"))
@@ -271,7 +282,7 @@ class QueryBuilderIntegrationTest {
     @Test
     void selectWhereChained() throws Exception {
         var q = select("*").from("users")
-                .where(eq("status", "active").and().eq("age", 30))
+                .where(and(eq("status", "active"), eq("age", 30)))
                 .build();
         var rs = execute(q);
         assertTrue(rs.next());

@@ -11,505 +11,165 @@ class FilterBuilderTest {
 
     @Test
     void eqCondition() {
-        var f = FilterBuilder.eq("name", "jon").build();
-        assertEquals("name = ?", f.buf().toString());
-        assertEquals(List.of("jon"), f.values());
+        var expr = FilterBuilder.eq("name", "jon");
+        assertEquals(new Equals("name", "jon"), expr);
     }
 
     @Test
     void notEqCondition() {
-        var f = FilterBuilder.not_eq("name", "jon").build();
-        assertEquals("NOT name = ?", f.buf().toString());
-        assertEquals(List.of("jon"), f.values());
+        var expr = FilterBuilder.not(FilterBuilder.eq("name", "jon"));
+        assertEquals(new Not(new Equals("name", "jon")), expr);
     }
 
     @Test
     void likeCondition() {
-        var f = FilterBuilder.like("name", "j%").build();
-        assertEquals("name LIKE ?", f.buf().toString());
-        assertEquals(List.of("j%"), f.values());
+        var f = FilterBuilder.like("name", "j%");
+        assertEquals(new Like("name", "j%"), f);
     }
 
     @Test
     void notLikeCondition() {
-        var f = FilterBuilder.not_like("name", "j%").build();
-        assertEquals("name NOT LIKE ?", f.buf().toString());
-        assertEquals(List.of("j%"), f.values());
+        var f = FilterBuilder.not(like("name", "j%"));
+        assertEquals(new Not(new Like("name", "j%")), f);
     }
 
     @Test
     void inCondition() {
-        var f = FilterBuilder.in("id", 1, 2, 3).build();
-        assertEquals("id IN (?, ?, ?)", f.buf().toString());
-        assertEquals(List.of(1, 2, 3), f.values());
+        var f = FilterBuilder.in("id", 1, 2, 3);
+        assertEquals(new In("id", 1, 2, 3), f);
     }
 
     @Test
     void notInCondition() {
-        var f = FilterBuilder.not_in("id", 1, 2).build();
-        assertEquals("id NOT IN (?, ?)", f.buf().toString());
-        assertEquals(List.of(1, 2), f.values());
+        var f = FilterBuilder.not(in("id", 1, 2));
+        assertEquals(new Not(new In("id", 1, 2)), f);
     }
 
     @Test
     void betweenCondition() {
-        var f = FilterBuilder.between("id", 1, 100).build();
-        assertEquals("id BETWEEN ? AND ?", f.buf().toString());
-        assertEquals(List.of(1, 100), f.values());
+        var f = FilterBuilder.between("id", 1, 100);
+        assertEquals(new Between("id", 1, 100), f);
     }
 
     @Test
     void notBetweenCondition() {
-        var f = FilterBuilder.not_between("id", 1, 100).build();
-        assertEquals("id NOT BETWEEN ? AND ?", f.buf().toString());
-        assertEquals(List.of(1, 100), f.values());
+        var f = FilterBuilder.not(between("id", 1, 100));
+        assertEquals(new Not(new Between("id", 1, 100)), f);
     }
 
     @Test
     void andCondition() {
-        var f = FilterBuilder.and(eq("a", 1), eq("b", 2)).build();
-        assertEquals("( a = ? ) AND ( b = ? )", f.buf().toString());
-        assertEquals(List.of(1, 2), f.values());
+        var f = FilterBuilder.and(eq("a", 1), eq("b", 2));
+        assertEquals(new And(new Equals("a", 1), new Equals("b", 2)), f);
     }
 
     @Test
     void orCondition() {
-        var f = FilterBuilder.or(eq("a", 1), eq("b", 2)).build();
-        assertEquals("( a = ? ) OR ( b = ? )", f.buf().toString());
-        assertEquals(List.of(1, 2), f.values());
+        var f = FilterBuilder.or(eq("a", 1), eq("b", 2));
+        assertEquals(new Or(new Equals("a", 1), new Equals("b", 2)), f);
     }
 
     @Test
     void notCondition() {
-        var f = FilterBuilder.not(eq("name", "jon")).build();
-        assertEquals("NOT ( name = ? )", f.buf().toString());
-        assertEquals(List.of("jon"), f.values());
+        var f = FilterBuilder.not(eq("name", "jon"));
+        assertEquals(new Not(new Equals("name", "jon")), f);
     }
-
-    @Test
-    void chainedAnd() {
-        var f = eq("a", 1).and().eq("b", 2).build();
-        assertEquals("a = ? AND b = ?", f.buf().toString());
-        assertEquals(List.of(1, 2), f.values());
-    }
-
-    @Test
-    void chainedOr() {
-        var f = eq("a", 1).or().eq("b", 2).build();
-        assertEquals("a = ? OR b = ?", f.buf().toString());
-        assertEquals(List.of(1, 2), f.values());
-    }
-
-    @Test
-    void chainedAndCombiner() {
-        var f = eq("a", 1).and().and(eq("b", 2), eq("c", 3)).build();
-        assertEquals("a = ? AND (( b = ? ) AND ( c = ? ))", f.buf().toString());
-        assertEquals(List.of(1, 2, 3), f.values());
-    }
-
-    @Test
-    void chainedOrCombiner() {
-        var f = eq("a", 1).or().or(eq("b", 2), eq("c", 3)).build();
-        assertEquals("a = ? OR (( b = ? ) OR ( c = ? ))", f.buf().toString());
-        assertEquals(List.of(1, 2, 3), f.values());
-    }
-
-    @Test
-    void instanceEqCondition() {
-        var f = new FilterBuilder().new CombinedCondition().eq("x", 10).build();
-        assertEquals("x = ?", f.buf().toString());
-        assertEquals(List.of(10), f.values());
-    }
-
-    @Test
-    void instanceNotEqCondition() {
-        var f = new FilterBuilder().new CombinedCondition().not_eq("x", 10).build();
-        assertEquals("NOT x = ?", f.buf().toString());
-        assertEquals(List.of(10), f.values());
-    }
-
-    @Test
-    void instanceLikeCondition() {
-        var f = new FilterBuilder().new CombinedCondition().like("x", "%v").build();
-        assertEquals("x LIKE ?", f.buf().toString());
-        assertEquals(List.of("%v"), f.values());
-    }
-
-    @Test
-    void instanceNotLikeCondition() {
-        var f = new FilterBuilder().new CombinedCondition().not_like("x", "%v").build();
-        assertEquals("x NOT LIKE ?", f.buf().toString());
-        assertEquals(List.of("%v"), f.values());
-    }
-
-    @Test
-    void instanceInCondition() {
-        var f = new FilterBuilder().new CombinedCondition().in("x", 1, 2).build();
-        assertEquals("x IN (?, ?)", f.buf().toString());
-        assertEquals(List.of(1, 2), f.values());
-    }
-
-    @Test
-    void instanceNotInCondition() {
-        var f = new FilterBuilder().new CombinedCondition().not_in("x", 1, 2).build();
-        assertEquals("x NOT IN (?, ?)", f.buf().toString());
-        assertEquals(List.of(1, 2), f.values());
-    }
-
-    @Test
-    void instanceBetweenCondition() {
-        var f = new FilterBuilder().new CombinedCondition().between("x", 1, 10).build();
-        assertEquals("x BETWEEN ? AND ?", f.buf().toString());
-        assertEquals(List.of(1, 10), f.values());
-    }
-
-    @Test
-    void instanceNotBetweenCondition() {
-        var f = new FilterBuilder().new CombinedCondition().not_between("x", 1, 10).build();
-        assertEquals("x NOT BETWEEN ? AND ?", f.buf().toString());
-        assertEquals(List.of(1, 10), f.values());
-    }
-
-    @Test
-    void instanceLt() {
-        var f = new FilterBuilder().new CombinedCondition().lt("x", 5).build();
-        assertEquals("x < ?", f.buf().toString());
-        assertEquals(List.of(5), f.values());
-    }
-
-    @Test
-    void instanceNotLt() {
-        var f = new FilterBuilder().new CombinedCondition().not_lt("x", 5).build();
-        assertEquals("NOT x < ?", f.buf().toString());
-        assertEquals(List.of(5), f.values());
-    }
-
-    @Test
-    void instanceGt() {
-        var f = new FilterBuilder().new CombinedCondition().gt("x", 5).build();
-        assertEquals("x > ?", f.buf().toString());
-        assertEquals(List.of(5), f.values());
-    }
-
-    @Test
-    void instanceNotGt() {
-        var f = new FilterBuilder().new CombinedCondition().not_gt("x", 5).build();
-        assertEquals("NOT x > ?", f.buf().toString());
-        assertEquals(List.of(5), f.values());
-    }
-
-    // ---------------------------------------------------------------------------
-    // Complicated / nested filter combinations
-    // ---------------------------------------------------------------------------
 
     @Test
     void tripleNestedAndOr() {
         var f = and(
                 or(eq("a", 1), eq("b", 2)),
-                and(eq("c", 3), eq("d", 4)))
-                .build();
-        assertEquals("( ( a = ? ) OR ( b = ? ) ) AND ( ( c = ? ) AND ( d = ? ) )", f.buf().toString());
-        assertEquals(List.of(1, 2, 3, 4), f.values());
+                and(eq("c", 3), eq("d", 4)));
+        assertEquals(new And(new Or(new Equals("a", 1), new Equals("b", 2)),
+                new And(new Equals("c", 3), new Equals("d", 4))), f);
     }
 
     @Test
     void notWrappingComplexCondition() {
         var f = not(and(
                 or(eq("x", 10), eq("y", 20)),
-                not(eq("z", 30))))
-                .build();
-        assertEquals("NOT ( ( ( x = ? ) OR ( y = ? ) ) AND ( NOT ( z = ? ) ) )", f.buf().toString());
-        assertEquals(List.of(10, 20, 30), f.values());
+                not(eq("z", 30))));
+        assertEquals(
+                new Not(
+                        new And(
+                                new Or(new Equals("x", 10), new Equals("y", 20)),
+                                new Not(new Equals("z", 30)))),
+                f);
     }
 
     @Test
-    void chainedCombinersOnlyNoLeadingOp() {
-        var f = eq("x", 1).and().and(eq("y", 2), eq("z", 3)).and().and(eq("a", 4), eq("b", 5)).build();
-        assertEquals("x = ? AND (( y = ? ) AND ( z = ? )) AND (( a = ? ) AND ( b = ? ))", f.buf().toString());
-        assertEquals(List.of(1, 2, 3, 4, 5), f.values());
+    void lessThanCondition() {
+        var f = FilterBuilder.lt("price", 100);
+        assertEquals(new LessThan("price", 100), f);
     }
 
     @Test
-    void chainedAfterCombiner() {
-        var f = eq("x", 1).and().and(eq("y", 2), eq("z", 3)).and().eq("w", 4).build();
-        assertEquals("x = ? AND (( y = ? ) AND ( z = ? )) AND w = ?", f.buf().toString());
-        assertEquals(List.of(1, 2, 3, 4), f.values());
+    void greaterThanCondition() {
+        var f = FilterBuilder.gt("price", 50);
+        assertEquals(new GreaterThan("price", 50), f);
     }
 
     @Test
-    void chainedInstanceConditionsAndCombiners() {
-        var f = eq("a", 1)
-                .and().eq("b", 2)
-                .and().and(eq("c", 3), eq("d", 4))
-                .or().eq("e", 5)
-                .or().or(eq("f", 6), eq("g", 7))
-                .build();
-        assertEquals("a = ? AND b = ? AND (( c = ? ) AND ( d = ? )) OR e = ? OR (( f = ? ) OR ( g = ? ))", f.buf().toString());
-        assertEquals(List.of(1, 2, 3, 4, 5, 6, 7), f.values());
+    void notLessThanCondition() {
+        var f = FilterBuilder.not(lt("price", 100));
+        assertEquals(new Not(new LessThan("price", 100)), f);
     }
 
-    // ---------------------------------------------------------------------------
-    // Edge cases
-    // ---------------------------------------------------------------------------
+    @Test
+    void notGreaterThanCondition() {
+        var f = FilterBuilder.not(gt("price", 50));
+        assertEquals(new Not(new GreaterThan("price", 50)), f);
+    }
 
     @Test
     void emptyIn() {
-        var f = FilterBuilder.in("x").build();
-        assertEquals("x IN ()", f.buf().toString());
-        assertTrue(f.values().isEmpty());
-    }
-
-    @Test
-    void instanceEmptyIn() {
-        var f = new FilterBuilder().new CombinedCondition().in("y").build();
-        assertEquals("y IN ()", f.buf().toString());
-        assertTrue(f.values().isEmpty());
+        var f = FilterBuilder.in("x");
+        assertEquals(new In("x"), f);
     }
 
     @Test
     void betweenWithSameBound() {
-        var f = FilterBuilder.between("x", 5, 5).build();
-        assertEquals("x BETWEEN ? AND ?", f.buf().toString());
-        assertEquals(List.of(5, 5), f.values());
-    }
-
-    @Test
-    void staticLt() {
-        var f = FilterBuilder.lt("price", 100).build();
-        assertEquals("price < ?", f.buf().toString());
-        assertEquals(List.of(100), f.values());
-    }
-
-    @Test
-    void staticGt() {
-        var f = FilterBuilder.gt("price", 50).build();
-        assertEquals("price > ?", f.buf().toString());
-        assertEquals(List.of(50), f.values());
-    }
-
-    @Test
-    void staticNotLt() {
-        var f = FilterBuilder.not_lt("price", 100).build();
-        assertEquals("NOT price < ?", f.buf().toString());
-        assertEquals(List.of(100), f.values());
-    }
-
-    @Test
-    void staticNotGt() {
-        var f = FilterBuilder.not_gt("price", 50).build();
-        assertEquals("NOT price > ?", f.buf().toString());
-        assertEquals(List.of(50), f.values());
-    }
-
-    // ---------------------------------------------------------------------------
-    // Chained lt/gt patterns — combiners still callable after lt/gt (bug exposed)
-    // ---------------------------------------------------------------------------
-
-    @Test
-    void chainedLtAndCombiner() {
-        var f = lt("a", 1).and().and(lt("b", 2), lt("c", 3)).build();
-        assertEquals("a < ? AND (( b < ? ) AND ( c < ? ))", f.buf().toString());
-        assertEquals(List.of(1, 2, 3), f.values());
-    }
-
-    @Test
-    void chainedGtAndCombiner() {
-        var f = gt("a", 1).and().and(gt("b", 2), gt("c", 3)).build();
-        assertEquals("a > ? AND (( b > ? ) AND ( c > ? ))", f.buf().toString());
-        assertEquals(List.of(1, 2, 3), f.values());
-    }
-
-    @Test
-    void chainedLtOrCombiner() {
-        var f = lt("a", 1).and().or(lt("b", 2), lt("c", 3)).build();
-        assertEquals("a < ? AND (( b < ? ) OR ( c < ? ))", f.buf().toString());
-        assertEquals(List.of(1, 2, 3), f.values());
-    }
-
-    @Test
-    void chainedMixedEqCombiner() {
-        var f = eq("a", 1).and().and(lt("b", 2), gt("c", 3)).build();
-        assertEquals("a = ? AND (( b < ? ) AND ( c > ? ))", f.buf().toString());
-        assertEquals(List.of(1, 2, 3), f.values());
-    }
-
-    @Test
-    void chainedMixedLikeCombiner() {
-        var f = like("a", "%x").and().and(like("b", "%y"), like("c", "%z")).build();
-        assertEquals("a LIKE ? AND (( b LIKE ? ) AND ( c LIKE ? ))", f.buf().toString());
-        assertEquals(List.of("%x", "%y", "%z"), f.values());
-    }
-
-    // ---------------------------------------------------------------------------
-    // Valid lt/gt chaining patterns (no combiner)
-    // ---------------------------------------------------------------------------
-
-    @Test
-    void chainedLtAndGt() {
-        var f = lt("a", 1).and().gt("b", 2).build();
-        assertEquals("a < ? AND b > ?", f.buf().toString());
-        assertEquals(List.of(1, 2), f.values());
-    }
-
-    @Test
-    void chainedGtOrLt() {
-        var f = gt("a", 1).or().lt("b", 2).build();
-        assertEquals("a > ? OR b < ?", f.buf().toString());
-        assertEquals(List.of(1, 2), f.values());
-    }
-
-    @Test
-    void chainedNotLtAndNotGt() {
-        var f = not_lt("a", 1).and().not_gt("b", 2).build();
-        assertEquals("NOT a < ? AND NOT b > ?", f.buf().toString());
-        assertEquals(List.of(1, 2), f.values());
-    }
-
-    @Test
-    void chainedEqAndLt() {
-        var f = eq("a", 1).and().lt("b", 2).build();
-        assertEquals("a = ? AND b < ?", f.buf().toString());
-        assertEquals(List.of(1, 2), f.values());
-    }
-
-    @Test
-    void chainedLtAndEq() {
-        var f = lt("a", 1).and().eq("b", 2).build();
-        assertEquals("a < ? AND b = ?", f.buf().toString());
-        assertEquals(List.of(1, 2), f.values());
-    }
-
-    @Test
-    void chainedLtBetween() {
-        var f = lt("a", 1).and().between("b", 2, 3).build();
-        assertEquals("a < ? AND b BETWEEN ? AND ?", f.buf().toString());
-        assertEquals(List.of(1, 2, 3), f.values());
-    }
-
-    // ---------------------------------------------------------------------------
-    // Static combiners with lt/gt
-    // ---------------------------------------------------------------------------
-
-    @Test
-    void andOfLtAndGt() {
-        var f = and(lt("a", 1), gt("b", 2)).build();
-        assertEquals("( a < ? ) AND ( b > ? )", f.buf().toString());
-        assertEquals(List.of(1, 2), f.values());
-    }
-
-    @Test
-    void orOfNotLtAndNotGt() {
-        var f = or(not_lt("a", 1), not_gt("b", 2)).build();
-        assertEquals("( NOT a < ? ) OR ( NOT b > ? )", f.buf().toString());
-        assertEquals(List.of(1, 2), f.values());
-    }
-
-    @Test
-    void notLt() {
-        var f = not(lt("a", 1)).build();
-        assertEquals("NOT ( a < ? )", f.buf().toString());
-        assertEquals(List.of(1), f.values());
-    }
-
-    @Test
-    void notGt() {
-        var f = not(gt("a", 1)).build();
-        assertEquals("NOT ( a > ? )", f.buf().toString());
-        assertEquals(List.of(1), f.values());
-    }
-
-    // ---------------------------------------------------------------------------
-    // Type-boundary: all static methods return AbstractCondition, so combiners
-    // require .and().and(c1,c2) / .or().or(c1,c2) bridge pattern.
-    // ---------------------------------------------------------------------------
-
-    @Test
-    void eqCombinersViaAndBridge() {
-        var f = eq("a", 1).and().and(eq("b", 2), eq("c", 3)).build();
-        assertEquals("a = ? AND (( b = ? ) AND ( c = ? ))", f.buf().toString());
-        assertEquals(List.of(1, 2, 3), f.values());
+        var f = FilterBuilder.between("x", 5, 5);
+        assertEquals(new Between("x", 5, 5), f);
     }
 
     @Test
     void inWithNullValue() {
-        var f = FilterBuilder.in("x", (Object) null).build();
-        assertEquals("x IN (?)", f.buf().toString());
-        assertEquals(java.util.Collections.singletonList(null), f.values());
+        var f = FilterBuilder.in("x", (Object) null);
+        assertEquals(new In("x", java.util.Collections.singletonList(null)), f);
     }
-
-    // ---------------------------------------------------------------------------
-    // IS NULL / IS NOT NULL / EXISTS / NOT EXISTS
-    // ---------------------------------------------------------------------------
 
     @Test
     void isNullCondition() {
-        var f = FilterBuilder.isNull("deleted_at").build();
-        assertEquals("deleted_at IS NULL", f.buf().toString());
-        assertTrue(f.values().isEmpty());
+        var f = FilterBuilder.isNull("deleted_at");
+        assertEquals(new IsNull("deleted_at"), f);
     }
 
     @Test
     void isNotNullCondition() {
-        var f = FilterBuilder.isNotNull("deleted_at").build();
-        assertEquals("deleted_at IS NOT NULL", f.buf().toString());
-        assertTrue(f.values().isEmpty());
+        var f = FilterBuilder.isNotNull("deleted_at");
+        assertEquals(new IsNotNull("deleted_at"), f);
     }
 
     @Test
     void existsCondition() {
         var sub = QueryBuilder.select("*").from("orders").where(FilterBuilder.eq("customer_id", 1));
-        var f = FilterBuilder.exists(sub).build();
-        assertEquals("EXISTS (SELECT * FROM orders WHERE customer_id = ?)", f.buf().toString());
-        assertEquals(List.of(1), f.values());
+        var f = FilterBuilder.exists(sub);
+        assertEquals(Exists.class, f.getClass());
+        assertSame(sub, ((Exists) f).subquery());
     }
 
     @Test
     void notExistsCondition() {
         var sub = QueryBuilder.select("*").from("orders").where(FilterBuilder.eq("customer_id", 1));
-        var f = FilterBuilder.notExists(sub).build();
-        assertEquals("NOT EXISTS (SELECT * FROM orders WHERE customer_id = ?)", f.buf().toString());
-        assertEquals(List.of(1), f.values());
-    }
-
-    @Test
-    void instanceIsNull() {
-        var f = new FilterBuilder().new CombinedCondition().isNull("x").build();
-        assertEquals("x IS NULL", f.buf().toString());
-        assertTrue(f.values().isEmpty());
-    }
-
-    @Test
-    void instanceIsNotNull() {
-        var f = new FilterBuilder().new CombinedCondition().isNotNull("x").build();
-        assertEquals("x IS NOT NULL", f.buf().toString());
-        assertTrue(f.values().isEmpty());
-    }
-
-    @Test
-    void chainedIsNullAndEq() {
-        var f = FilterBuilder.isNull("deleted_at").and().eq("status", "active").build();
-        assertEquals("deleted_at IS NULL AND status = ?", f.buf().toString());
-        assertEquals(List.of("active"), f.values());
-    }
-
-    @Test
-    void chainedExistsAndEq() {
-        var sub = QueryBuilder.select("*").from("orders").where(FilterBuilder.eq("customer_id", 1));
-        var f = FilterBuilder.exists(sub).and().eq("status", "active").build();
-        assertEquals("EXISTS (SELECT * FROM orders WHERE customer_id = ?) AND status = ?", f.buf().toString());
-        assertEquals(List.of(1, "active"), f.values());
+        var f = FilterBuilder.notExists(sub);
+        assertEquals(NotExists.class, f.getClass());
+        assertSame(sub, ((NotExists) f).subquery());
     }
 
     @Test
     void andOfIsNullAndNotNull() {
-        var f = FilterBuilder.and(isNull("deleted_at"), isNotNull("created_at")).build();
-        assertEquals("( deleted_at IS NULL ) AND ( created_at IS NOT NULL )", f.buf().toString());
-        assertTrue(f.values().isEmpty());
+        var f = FilterBuilder.and(isNull("deleted_at"), isNotNull("created_at"));
+        assertEquals(new And(new IsNull("deleted_at"), new IsNotNull("created_at")), f);
     }
-
-    // ---------------------------------------------------------------------------
-    // TODO: Missing filter features (not yet supported)
-    // ---------------------------------------------------------------------------
-
-    // (all filter features now implemented)
 }

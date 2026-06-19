@@ -54,8 +54,8 @@ class QueryBuilderTest {
 
     @Test
     void selectWhereNotEq() {
-        var q = select("*").from("users").where(not_eq("id", 1)).build();
-        assertEquals("SELECT * FROM users WHERE NOT id = ?", q.query());
+        var q = select("*").from("users").where(not(eq("id", 1))).build();
+        assertEquals("SELECT * FROM users WHERE NOT (id = ?)", q.query());
         assertEquals(List.of(1), q.values());
     }
 
@@ -68,8 +68,8 @@ class QueryBuilderTest {
 
     @Test
     void selectWhereNotLike() {
-        var q = select("*").from("users").where(not_like("name", "j%")).build();
-        assertEquals("SELECT * FROM users WHERE name NOT LIKE ?", q.query());
+        var q = select("*").from("users").where(not(like("name", "j%"))).build();
+        assertEquals("SELECT * FROM users WHERE NOT (name LIKE ?)", q.query());
         assertEquals(List.of("j%"), q.values());
     }
 
@@ -90,17 +90,17 @@ class QueryBuilderTest {
 
     @Test
     void selectWhereNotIn() {
-        var q = select("*").from("users").where(not_in("id", 1, 2)).build();
-        assertEquals("SELECT * FROM users WHERE id NOT IN (?, ?)", q.query());
+        var q = select("*").from("users").where(not(in("id", 1, 2))).build();
+        assertEquals("SELECT * FROM users WHERE NOT (id IN (?, ?))", q.query());
         assertEquals(List.of(1, 2), q.values());
     }
 
     @Test
     void selectWhereNotInSubquery() {
         var q = select("*").from("users")
-                .where(not_in("id", select("id").from("orders")))
+                .where(not(in("id", select("id").from("orders"))))
                 .build();
-        assertEquals("SELECT * FROM users WHERE id NOT IN (SELECT id FROM orders)", q.query());
+        assertEquals("SELECT * FROM users WHERE NOT (id IN (SELECT id FROM orders))", q.query());
     }
 
     @Test
@@ -112,8 +112,8 @@ class QueryBuilderTest {
 
     @Test
     void selectWhereNotBetween() {
-        var q = select("*").from("users").where(not_between("id", 1, 10)).build();
-        assertEquals("SELECT * FROM users WHERE id NOT BETWEEN ? AND ?", q.query());
+        var q = select("*").from("users").where(not(between("id", 1, 10))).build();
+        assertEquals("SELECT * FROM users WHERE NOT (id BETWEEN ? AND ?)", q.query());
         assertEquals(List.of(1, 10), q.values());
     }
 
@@ -122,7 +122,7 @@ class QueryBuilderTest {
         var q = select("*").from("users")
                 .where(and(eq("id", 1), eq("name", "jon")))
                 .build();
-        assertEquals("SELECT * FROM users WHERE ( id = ? ) AND ( name = ? )", q.query());
+        assertEquals("SELECT * FROM users WHERE (id = ?) AND (name = ?)", q.query());
         assertEquals(List.of(1, "jon"), q.values());
     }
 
@@ -131,7 +131,7 @@ class QueryBuilderTest {
         var q = select("*").from("users")
                 .where(or(eq("id", 1), eq("id", 2)))
                 .build();
-        assertEquals("SELECT * FROM users WHERE ( id = ? ) OR ( id = ? )", q.query());
+        assertEquals("SELECT * FROM users WHERE (id = ?) OR (id = ?)", q.query());
         assertEquals(List.of(1, 2), q.values());
     }
 
@@ -140,37 +140,38 @@ class QueryBuilderTest {
         var q = select("*").from("users")
                 .where(not(eq("name", "jon")))
                 .build();
-        assertEquals("SELECT * FROM users WHERE NOT ( name = ? )", q.query());
+        assertEquals("SELECT * FROM users WHERE NOT (name = ?)", q.query());
         assertEquals(List.of("jon"), q.values());
     }
 
     @Test
     void selectWhereChained() {
         var q = select("*").from("users")
-                .where(eq("first_name", "jon").and().eq("last_name", "doe"))
+                .where(and(eq("first_name", "jon"), eq("last_name", "doe")))
                 .build();
-        assertEquals("SELECT * FROM users WHERE first_name = ? AND last_name = ?", q.query());
+        assertEquals("SELECT * FROM users WHERE (first_name = ?) AND (last_name = ?)", q.query());
         assertEquals(List.of("jon", "doe"), q.values());
     }
 
     @Test
     void selectWhereChainedOr() {
         var q = select("*").from("users")
-                .where(eq("first_name", "jon").or().eq("first_name", "jane"))
+                .where(or(eq("first_name", "jon"), eq("first_name", "jane")))
                 .build();
-        assertEquals("SELECT * FROM users WHERE first_name = ? OR first_name = ?", q.query());
+        assertEquals("SELECT * FROM users WHERE (first_name = ?) OR (first_name = ?)", q.query());
         assertEquals(List.of("jon", "jane"), q.values());
     }
 
     @Test
     void selectWhereChainedInstanceConditions() {
         var q = select("*").from("users")
-                .where(eq("first_name", "jon")
-                        .and().like("last_name", "d%")
-                        .and().in("age", 20, 30)
-                        .and().between("id", 1, 100))
+                .where(and(
+                        eq("first_name", "jon"),
+                        like("last_name", "d%"),
+                        in("age", 20, 30),
+                        between("id", 1, 100)))
                 .build();
-        assertEquals("SELECT * FROM users WHERE first_name = ? AND last_name LIKE ? AND age IN (?, ?) AND id BETWEEN ? AND ?",
+        assertEquals("SELECT * FROM users WHERE (first_name = ?) AND (last_name LIKE ?) AND (age IN (?, ?)) AND (id BETWEEN ? AND ?)",
                 q.query());
         assertEquals(List.of("jon", "d%", 20, 30, 1, 100), q.values());
     }
@@ -183,7 +184,7 @@ class QueryBuilderTest {
                         and(eq("first_name", "jane"), eq("last_name", "doe"))))
                 .build();
         assertEquals(
-                "SELECT * FROM users WHERE ( ( first_name = ? ) AND ( last_name = ? ) ) OR ( ( first_name = ? ) AND ( last_name = ? ) )",
+                "SELECT * FROM users WHERE ((first_name = ?) AND (last_name = ?)) OR ((first_name = ?) AND (last_name = ?))",
                 q.query());
         assertEquals(List.of("jon", "doe", "jane", "doe"), q.values());
     }
@@ -332,20 +333,20 @@ class QueryBuilderTest {
     void selectJoinMultipleOnConditions() {
         var q = select("*").from("orders")
                 .join("order_details")
-                .on(colEq("orders.id", "order_details.order_id").and().colEq("orders.product", "order_details.product"))
+                .on(and(colEq("orders.id", "order_details.order_id"), colEq("orders.product", "order_details.product")))
                 .build();
         assertEquals(
-                "SELECT * FROM orders JOIN order_details ON orders.id = order_details.order_id AND orders.product = order_details.product",
+                "SELECT * FROM orders JOIN order_details ON (orders.id = order_details.order_id) AND (orders.product = order_details.product)",
                 q.query());
     }
 
     @Test
     void selectJoinWithAdditionalFilter() {
         var q = select("*").from("users")
-                .join("orders").on(colEq("users.id", "orders.customer_id").and().gt("orders.amount", 100))
+                .join("orders").on(and(colEq("users.id", "orders.customer_id"), gt("orders.amount", 100)))
                 .build();
         assertEquals(
-                "SELECT * FROM users JOIN orders ON users.id = orders.customer_id AND orders.amount > ?",
+                "SELECT * FROM users JOIN orders ON (users.id = orders.customer_id) AND (orders.amount > ?)",
                 q.query());
         assertEquals(List.of(100), q.values());
     }
@@ -354,10 +355,10 @@ class QueryBuilderTest {
     void selectJoinOnWithOr() {
         var q = select("*").from("users")
                 .join("orders")
-                .on(colEq("users.id", "orders.customer_id").or().colEq("users.id", "orders.customer_id"))
+                .on(or(colEq("users.id", "orders.customer_id"), colEq("users.id", "orders.customer_id")))
                 .build();
         assertEquals(
-                "SELECT * FROM users JOIN orders ON users.id = orders.customer_id OR users.id = orders.customer_id",
+                "SELECT * FROM users JOIN orders ON (users.id = orders.customer_id) OR (users.id = orders.customer_id)",
                 q.query());
     }
 
@@ -368,7 +369,7 @@ class QueryBuilderTest {
                 .where(and(eq("users.status", "active"), gt("orders.amount", 50)))
                 .build();
         assertEquals(
-                "SELECT * FROM users JOIN orders ON users.id = orders.customer_id WHERE ( users.status = ? ) AND ( orders.amount > ? )",
+                "SELECT * FROM users JOIN orders ON users.id = orders.customer_id WHERE (users.status = ?) AND (orders.amount > ?)",
                 q.query());
         assertEquals(List.of("active", 50), q.values());
     }
@@ -378,7 +379,7 @@ class QueryBuilderTest {
         var q = select("*").from("users")
                 .join("orders").on(not(colEq("users.id", "orders.customer_id")))
                 .build();
-        assertEquals("SELECT * FROM users JOIN orders ON NOT ( users.id = orders.customer_id )",
+        assertEquals("SELECT * FROM users JOIN orders ON NOT (users.id = orders.customer_id)",
                 q.query());
     }
 
@@ -486,7 +487,7 @@ class QueryBuilderTest {
                                 colEq("orders.product", "order_details.product")))
                 .build();
         assertEquals(
-                "SELECT * FROM users JOIN orders ON users.id = orders.customer_id JOIN order_details ON ( orders.id = order_details.order_id ) AND ( orders.product = order_details.product )",
+                "SELECT * FROM users JOIN orders ON users.id = orders.customer_id JOIN order_details ON (orders.id = order_details.order_id) AND (orders.product = order_details.product)",
                 q.query());
     }
 
@@ -499,7 +500,7 @@ class QueryBuilderTest {
                                 colEq("orders.product", "order_details.product")))
                 .build();
         assertEquals(
-                "SELECT * FROM users LEFT JOIN orders ON users.id = orders.customer_id INNER JOIN order_details ON ( orders.id = order_details.order_id ) AND ( orders.product = order_details.product )",
+                "SELECT * FROM users LEFT JOIN orders ON users.id = orders.customer_id INNER JOIN order_details ON (orders.id = order_details.order_id) AND (orders.product = order_details.product)",
                 q.query());
     }
 
@@ -513,7 +514,7 @@ class QueryBuilderTest {
                 .where(eq("users.status", "active"))
                 .build();
         assertEquals(
-                "SELECT * FROM users LEFT JOIN orders ON users.id = orders.customer_id JOIN order_details ON ( orders.id = order_details.order_id ) AND ( orders.product = order_details.product ) WHERE users.status = ?",
+                "SELECT * FROM users LEFT JOIN orders ON users.id = orders.customer_id JOIN order_details ON (orders.id = order_details.order_id) AND (orders.product = order_details.product) WHERE users.status = ?",
                 q.query());
         assertEquals(List.of("active"), q.values());
     }
@@ -645,7 +646,7 @@ class QueryBuilderTest {
                                 and(eq("deleted", 1), eq("flag", 0)))))
                 .build();
         assertEquals(
-                "SELECT * FROM users WHERE NOT ( ( ( status = ? ) OR ( role = ? ) ) AND ( ( deleted = ? ) AND ( flag = ? ) ) )",
+                "SELECT * FROM users WHERE NOT (((status = ?) OR (role = ?)) AND ((deleted = ?) AND (flag = ?)))",
                 q.query());
         assertEquals(List.of("inactive", "guest", 1, 0), q.values());
     }
@@ -659,18 +660,18 @@ class QueryBuilderTest {
     @Test
     void selectWithWhereNotChained() {
         var q = select("*").from("users")
-                .where(not(eq("status", "deleted")).and().eq("active", 1))
+                .where(and(not(eq("status", "deleted")), eq("active", 1)))
                 .build();
-        assertEquals("SELECT * FROM users WHERE NOT ( status = ? ) AND active = ?", q.query());
+        assertEquals("SELECT * FROM users WHERE (NOT (status = ?)) AND (active = ?)", q.query());
         assertEquals(List.of("deleted", 1), q.values());
     }
 
     @Test
     void whereWithChainedCombinerAndInline() {
         var q = select("*").from("users")
-                .where(eq("a", 1).and().and(eq("b", 2), eq("c", 3)).and().eq("d", 4))
+                .where(and(eq("a", 1), and(eq("b", 2), eq("c", 3)), eq("d", 4)))
                 .build();
-        assertEquals("SELECT * FROM users WHERE a = ? AND (( b = ? ) AND ( c = ? )) AND d = ?", q.query());
+        assertEquals("SELECT * FROM users WHERE (a = ?) AND ((b = ?) AND (c = ?)) AND (d = ?)", q.query());
         assertEquals(List.of(1, 2, 3, 4), q.values());
     }
 
@@ -681,7 +682,7 @@ class QueryBuilderTest {
                 .set("email", "new_email")
                 .where(not(eq("id", 1)))
                 .build();
-        assertEquals("UPDATE users SET name = ? , email = ? WHERE NOT ( id = ? )", q.query());
+        assertEquals("UPDATE users SET name = ? , email = ? WHERE NOT (id = ?)", q.query());
         assertEquals(List.of("new_name", "new_email", 1), q.values());
     }
 
@@ -693,7 +694,7 @@ class QueryBuilderTest {
                         or(eq("level", "DEBUG"), eq("level", "TRACE"))))
                 .build();
         assertEquals(
-                "DELETE FROM logs WHERE ( created_at BETWEEN ? AND ? ) AND ( ( level = ? ) OR ( level = ? ) )",
+                "DELETE FROM logs WHERE (created_at BETWEEN ? AND ?) AND ((level = ?) OR (level = ?))",
                 q.query());
         assertEquals(List.of("2024-01-01", "2024-12-31", "DEBUG", "TRACE"), q.values());
     }
@@ -709,22 +710,23 @@ class QueryBuilderTest {
     }
 
     @Test
-    void chainedWhereAllConditionTypes() {
+    void whereAllConditionTypes() {
         var q = select("*").from("items")
-                .where(eq("type", "book")
-                        .and().not_eq("status", "archived")
-                        .and().like("title", "%java%")
-                        .and().not_like("author", "%foo%")
-                        .and().in("category", 1, 2, 3)
-                        .and().not_in("tags", "old", "deprecated")
-                        .and().between("price", 10, 100)
-                        .and().not_between("rating", 0, 1)
-                        .and().lt("qty", 10)
-                        .and().not_lt("min", 5)
-                        .and().gt("score", 50)
-                        .and().not_gt("max", 200))
+                .where(and(
+                        eq("type", "book"),
+                        not(eq("status", "archived")),
+                        like("title", "%java%"),
+                        not(like("author", "%foo%")),
+                        in("category", 1, 2, 3),
+                        not(in("tags", "old", "deprecated")),
+                        between("price", 10, 100),
+                        not(between("rating", 0, 1)),
+                        lt("qty", 10),
+                        not(lt("min", 5)),
+                        gt("score", 50),
+                        not(gt("max", 200))))
                 .build();
-        assertEquals("SELECT * FROM items WHERE type = ? AND NOT status = ? AND title LIKE ? AND author NOT LIKE ? AND category IN (?, ?, ?) AND tags NOT IN (?, ?) AND price BETWEEN ? AND ? AND rating NOT BETWEEN ? AND ? AND qty < ? AND NOT min < ? AND score > ? AND NOT max > ?",
+        assertEquals("SELECT * FROM items WHERE (type = ?) AND (NOT (status = ?)) AND (title LIKE ?) AND (NOT (author LIKE ?)) AND (category IN (?, ?, ?)) AND (NOT (tags IN (?, ?))) AND (price BETWEEN ? AND ?) AND (NOT (rating BETWEEN ? AND ?)) AND (qty < ?) AND (NOT (min < ?)) AND (score > ?) AND (NOT (max > ?))",
                 q.query());
         assertEquals(List.of("book", "archived", "%java%", "%foo%", 1, 2, 3, "old", "deprecated", 10, 100, 0, 1, 10, 5, 50, 200), q.values());
     }
@@ -749,15 +751,15 @@ class QueryBuilderTest {
 
     @Test
     void selectWhereNotLt() {
-        var q = select("*").from("users").where(not_lt("id", 5)).build();
-        assertEquals("SELECT * FROM users WHERE NOT id < ?", q.query());
+        var q = select("*").from("users").where(not(lt("id", 5))).build();
+        assertEquals("SELECT * FROM users WHERE NOT (id < ?)", q.query());
         assertEquals(List.of(5), q.values());
     }
 
     @Test
     void selectWhereNotGt() {
-        var q = select("*").from("users").where(not_gt("id", 5)).build();
-        assertEquals("SELECT * FROM users WHERE NOT id > ?", q.query());
+        var q = select("*").from("users").where(not(gt("id", 5))).build();
+        assertEquals("SELECT * FROM users WHERE NOT (id > ?)", q.query());
         assertEquals(List.of(5), q.values());
     }
 
@@ -766,25 +768,25 @@ class QueryBuilderTest {
         var q = select("*").from("users")
                 .where(and(lt("a", 1), gt("b", 2)))
                 .build();
-        assertEquals("SELECT * FROM users WHERE ( a < ? ) AND ( b > ? )", q.query());
+        assertEquals("SELECT * FROM users WHERE (a < ?) AND (b > ?)", q.query());
         assertEquals(List.of(1, 2), q.values());
     }
 
     @Test
     void selectWhereChainedLtGt() {
         var q = select("*").from("users")
-                .where(lt("a", 1).and().gt("b", 2))
+                .where(and(lt("a", 1), gt("b", 2)))
                 .build();
-        assertEquals("SELECT * FROM users WHERE a < ? AND b > ?", q.query());
+        assertEquals("SELECT * FROM users WHERE (a < ?) AND (b > ?)", q.query());
         assertEquals(List.of(1, 2), q.values());
     }
 
     @Test
     void selectWhereChainedLtGtWithCombiner() {
         var q = select("*").from("users")
-                .where(lt("a", 1).and().and(lt("b", 2), gt("c", 3)))
+                .where(and(lt("a", 1), and(lt("b", 2), gt("c", 3))))
                 .build();
-        assertEquals("SELECT * FROM users WHERE a < ? AND (( b < ? ) AND ( c > ? ))", q.query());
+        assertEquals("SELECT * FROM users WHERE (a < ?) AND ((b < ?) AND (c > ?))", q.query());
         assertEquals(List.of(1, 2, 3), q.values());
     }
 
@@ -793,7 +795,7 @@ class QueryBuilderTest {
         var q = QueryBuilder.delete().from("logs")
                 .where(or(lt("id", 100), gt("id", 200)))
                 .build();
-        assertEquals("DELETE FROM logs WHERE ( id < ? ) OR ( id > ? )", q.query());
+        assertEquals("DELETE FROM logs WHERE (id < ?) OR (id > ?)", q.query());
         assertEquals(List.of(100, 200), q.values());
     }
 
@@ -849,7 +851,7 @@ class QueryBuilderTest {
                 .where(and(colEq("orders.customer_id", "users.id"), gt("orders.amount", 100)));
         var q = select("*").from("users").where(exists(sub)).build();
         assertEquals(
-                "SELECT * FROM users WHERE EXISTS (SELECT * FROM orders WHERE ( orders.customer_id = users.id ) AND ( orders.amount > ? ))",
+                "SELECT * FROM users WHERE EXISTS (SELECT * FROM orders WHERE (orders.customer_id = users.id) AND (orders.amount > ?))",
                 q.query());
         assertEquals(List.of(100), q.values());
     }
@@ -859,7 +861,7 @@ class QueryBuilderTest {
         var q = select("*").from("users")
                 .where(and(isNull("email"), eq("status", "inactive")))
                 .build();
-        assertEquals("SELECT * FROM users WHERE ( email IS NULL ) AND ( status = ? )", q.query());
+        assertEquals("SELECT * FROM users WHERE (email IS NULL) AND (status = ?)", q.query());
         assertEquals(List.of("inactive"), q.values());
     }
 
@@ -868,7 +870,7 @@ class QueryBuilderTest {
         var q = select("*").from("users")
                 .where(not(isNull("email")))
                 .build();
-        assertEquals("SELECT * FROM users WHERE NOT ( email IS NULL )", q.query());
+        assertEquals("SELECT * FROM users WHERE NOT (email IS NULL)", q.query());
     }
 
     // ---------------------------------------------------------------------------
@@ -877,9 +879,7 @@ class QueryBuilderTest {
 
     @Test
     void selectWithNullValues() {
-        var q = select("*").from("users").where(eq("name", null)).build();
-        assertEquals("SELECT * FROM users WHERE name = ?", q.query());
-        assertEquals(java.util.Collections.singletonList(null), q.values());
+        assertThrows(NullPointerException.class, () -> eq("name", null));
     }
 
     @Test
